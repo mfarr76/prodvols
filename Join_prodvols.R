@@ -1,8 +1,13 @@
 rm(list = ls())
 
 load("C:/Users/mfarr/Documents/R_files/Spotfire.data/prodvol_tbls.RData")
+load("C:/Users/mfarr/Documents/R_files/Spotfire.data/prodvol_daily_join.RData")
 
-library(dplyr)
+
+
+library(dplyr, warn.conflicts = FALSE)
+library(lubridate, warn.conflicts = FALSE)
+library(tidyr, warn.conflicts = FALSE)
 
 #get a list of data.frames
 file.names<-ls()[sapply(ls(), function(x) class(get(x))) == 'data.frame']
@@ -20,11 +25,36 @@ rm(tmp)
 
 }
 
-JOIN <- right_join(prop %>% select(API, PROPNUM, LEASE, TYPE_CURVE_REGION, TYPE_CURVE_SUBREGION, LATITUDE ,LATITUDE_BH, 
-                                   LONGITUDE, LONGITUDE_BH, FIRST_PROD, EFF_LAT, RSV_CAT), 
-                   daily %>% select(Aries_Prop_Num, Prod_Dt, Vol_Gas_Wh_Mcf, Vol_Gas_Prod_Mcf, Vol_Oil_Wh_Bbl, Vol_Oil_Prod_Bbl, Vol_Wtr_Wh_Bbl), 
-                   by = c("PROPNUM" = "Aries_Prop_Num"))
+JOIN <- right_join(prop %>% select(API, PROPNUM, WELLCOMPID, LEASE, TYPE_CURVE_REGION, 
+                                   TYPE_CURVE_SUBREGION, LATITUDE ,LATITUDE_BH, LONGITUDE, 
+                                   LONGITUDE_BH, FIRST_PROD, EFF_LAT, RSV_CAT), 
+                   daily %>% select(Aries_Prop_Num, Prod_Dt, Vol_Gas_Wh_Mcf, Vol_Gas_Prod_Mcf, 
+                                    Vol_Oil_Wh_Bbl, Vol_Oil_Prod_Bbl, Vol_Wtr_Wh_Bbl) %>%
+                     mutate(Prod_Dt = as.Date(Prod_Dt, "%Y/%m/%d"), 
+                            MON_END_DATE = ceiling_date(Prod_Dt, "month") - days(1)), 
+                   by = c("PROPNUM" = "Aries_Prop_Num")) 
 
+
+dt <- gas %>% 
+  mutate(DATE = (ceiling_date(SampleDate, "month") - days(1))) %>%
+  group_by(WellCompletionEKey, DATE) %>%
+  select(DATE, WellCompletionEKey, Ethane_C2_Dry, Propane_C3_Dry, 
+         Isobutane_iC4_Dry, n_Butane_nC4_Dry,  Isopentane_iC5_Dry, 
+         n_Pentane_nC5_Dry, Hexanes_Plus_C6Plus_Dry, Heating_Value_Dry) %>%
+  mutate(GPM = Ethane_C2_Dry + Propane_C3_Dry + Isobutane_iC4_Dry +
+           n_Butane_nC4_Dry + Isopentane_iC5_Dry + n_Pentane_nC5_Dry + 
+           Hexanes_Plus_C6Plus_Dry, 
+         NGLYield = GPM / 42 * 1000) %>%
+  summarise(BTU = mean(Heating_Value_Dry, na.rm = TRUE),
+            C2 = mean(Ethane_C2_Dry, na.rm = TRUE),
+            C3 = mean(Propane_C3_Dry, na.rm = TRUE),
+            IC4 = mean(Isobutane_iC4_Dry, na.rm = TRUE),
+            NC4 = mean(n_Butane_nC4_Dry, na.rm = TRUE),
+            IC5 = mean(Isopentane_iC5_Dry, na.rm = TRUE),
+            NC5 = mean(n_Pentane_nC5_Dry, na.rm = TRUE),
+            C6Plus = mean(Hexanes_Plus_C6Plus_Dry, na.rm = TRUE),
+            GPM = mean(GPM, na.rm = TRUE), 
+            NGLYield = mean(NGLYield, na.rm = TRUE))
 
 
 
