@@ -63,9 +63,22 @@ JOIN <- right_join(prop %>% select(API, PROPNUM, WELLCOMPID, LEASE, BUDGET_NODE,
   by = c("WELLCOMPID" = "WellCompletionEKey", c("MON_END_DATE" = "DATE"))) %>%
   left_join(., interest %>%
               select(WellCompletionEKey, NetRevenueInterest, GrossWorkingInterest), by = c("WELLCOMPID" = "WellCompletionEKey")) %>%
-  mutate(NETGAS_Prod_Mcf = Vol_Gas_Prod_Mcf * ( GrossWorkingInterest / 100 ) , 
+  left_join(., cond %>% 
+              select(WellCompletionEKey, SampleDate, Shrinkage_Factor_Stock_Tank_Liquid, 
+                     API_Gravity_Separator_Liquid) %>%
+              mutate(SAMPLE_END_DATE = ceiling_date(SampleDate, "month") - days(1)), 
+            by = c("WELLCOMPID" = "WellCompletionEKey", c("MON_END_DATE" = "SAMPLE_END_DATE"))) %>%
+  mutate(NETGAS_Prod_Mcf = Vol_Gas_Prod_Mcf * ( GrossWorkingInterest / 100 ), 
          NETOIL_Prod_Bbl = Vol_Oil_Prod_Bbl * ( GrossWorkingInterest / 100 ), 
-         NETBOE_Prod = NETOIL_Prod_Bbl + NETGAS_Prod_Mcf / 6)
+         NETNGL_Bbl = NETGAS_Prod_Mcf / 1000 * NGLYield,
+         NETBOE_Prod = NETOIL_Prod_Bbl + NETGAS_Prod_Mcf / 6 + NETNGL_Bbl)
+
+
+
+
+
+
+
 
 
 
