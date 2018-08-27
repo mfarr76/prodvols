@@ -48,12 +48,10 @@ JOIN <- right_join(prop %>% select(API, PROPNUM, WELLCOMPID, LEASE, BUDGET_NODE,
                    daily %>% 
                      group_by(Aries_Prop_Num) %>%
                      arrange(Aries_Prop_Num, Prod_Dt) %>%
-                     mutate(MON_END_DATE = ceiling_date(Prod_Dt, "month") - days(1), 
-                            prod = 1, 
-                            DAYS = cumsum(prod)) %>% ##time zero
+                     mutate(MON_END_DATE = ceiling_date(Prod_Dt, "month") - days(1)) %>% ##time zero
                      rename(GR_Gas_Prod_Mcf = Vol_Gas_Prod_Mcf, 
                             GR_Oil_Prod_Bbl = Vol_Oil_Prod_Bbl) %>%
-                     select(Aries_Prop_Num, Prod_Dt, MON_END_DATE, DAYS, GR_Gas_Prod_Mcf, GR_Oil_Prod_Bbl),
+                     select(Aries_Prop_Num, Prod_Dt, MON_END_DATE, GR_Gas_Prod_Mcf, GR_Oil_Prod_Bbl),
                    by = c("PROPNUM" = "Aries_Prop_Num")) %>%
   ##join well interest table
   left_join(., interest %>%
@@ -94,14 +92,19 @@ JOIN <- right_join(prop %>% select(API, PROPNUM, WELLCOMPID, LEASE, BUDGET_NODE,
           summarise_all(., mean)) %>%
   group_by(PROPNUM) %>%
   arrange(PROPNUM, Prod_Dt) %>%
-  mutate(C2_Sales = C2_WH * C2_RF, 
+  mutate(prod = 1, 
+         DAYS = cumsum(prod), 
+         C2_Sales = C2_WH * C2_RF, 
          C3_Sales = C3_WH * C3_RF, 
          iC4_Sales = iC4_WH * iC4_RF, 
          nC4_Sales = nC4_WH * nC4_RF, 
          iC5_Sales = iC5_WH * iC5_RF, 
          nC5_Sales = nC5_WH * nC5_RF, 
          C6Plus_Sales = C6Plus_WH * C6Plus_RF,
-         GPM_Sales = C2_Sales + C3_Sales + iC4_Sales + nC4_Sales + iC5_Sales + nC5_Sales + C6Plus_Sales,
+         GPM_Sales_w_Ethane = C2_Sales + C3_Sales + iC4_Sales + nC4_Sales + iC5_Sales + nC5_Sales + C6Plus_Sales,
+         GPM_Sales_wo_Ethane = C3_Sales + iC4_Sales + nC4_Sales + iC5_Sales + nC5_Sales + C6Plus_Sales,
+         NGLYield_Sales_w_Ethane = GPM_Sales_w_Ethane / 42 * 1000,
+         NGLYield_Sales_wo_Ethane = GPM_Sales_wo_Ethane / 42 * 1000,
          C2_Shrink_Mcf = GR_Gas_Prod_Mcf * C3_Sales * C3_Shrink,
          C3_Shrink_Mcf = GR_Gas_Prod_Mcf * C3_Sales * C3_Shrink,
          iC4_Shrink_Mcf = GR_Gas_Prod_Mcf * iC4_Sales * iC4_Shrink,
@@ -109,13 +112,17 @@ JOIN <- right_join(prop %>% select(API, PROPNUM, WELLCOMPID, LEASE, BUDGET_NODE,
          iC5_Shrink_Mcf = GR_Gas_Prod_Mcf * iC5_Sales * iC5_Shrink,
          nC5_Shrink_Mcf = GR_Gas_Prod_Mcf * nC5_Sales * nC5_Shrink,
          C6Plus_Shrink_Mcf = GR_Gas_Prod_Mcf * C6Plus_Sales * C6Plus_Shrink,
-         Total_Shrink_Mcf = C2_Shrink_Mcf + C3_Shrink_Mcf + iC4_Shrink_Mcf + nC4_Shrink_Mcf + 
-           iC5_Shrink_Mcf + nC5_Shrink_Mcf + C6Plus_Shrink_Mcf,
-         GR_Shrunk_Gas_Mcf = GR_Gas_Prod_Mcf - Total_Shrink_Mcf, 
-         NETGAS_Mcf = GR_Shrunk_Gas_Mcf * NetRevenueInterest / 100, 
+         Total_Shrink_Mcf_w_Ethane = C2_Shrink_Mcf + C3_Shrink_Mcf + iC4_Shrink_Mcf + nC4_Shrink_Mcf + iC5_Shrink_Mcf + nC5_Shrink_Mcf + C6Plus_Shrink_Mcf,
+         Total_Shrink_Mcf_wo_Ethane = C3_Shrink_Mcf + iC4_Shrink_Mcf + nC4_Shrink_Mcf + iC5_Shrink_Mcf + nC5_Shrink_Mcf + C6Plus_Shrink_Mcf,
+         GR_Shrunk_Gas_Mcf_w_Ethane = GR_Gas_Prod_Mcf - Total_Shrink_Mcf_w_Ethane,
+         GR_Shrunk_Gas_Mcf_wo_Ethane = GR_Gas_Prod_Mcf - Total_Shrink_Mcf_wo_Ethane,
+         NETGAS_Shrunk_Mcf_w_Ethane = GR_Shrunk_Gas_Mcf_w_Ethane * NetRevenueInterest / 100,
+         NETGAS_Shrunk_Mcf_wo_Ethane = GR_Shrunk_Gas_Mcf_wo_Ethane * NetRevenueInterest / 100,
          NETOIL_Bbl = GR_Oil_Prod_Bbl * NetRevenueInterest / 100, 
-         NETNGL_Bbl = GR_Gas_Prod_Mcf / 1000 * NetRevenueInterest / 100 * NGLYield_WH,
-         NETBOE_Prod = NETOIL_Bbl + NETGAS_Mcf / 6 + NETNGL_Bbl) 
+         NETNGL_Bbl_w_Ethane = GR_Gas_Prod_Mcf / 1000 * NetRevenueInterest / 100 * NGLYield_Sales_w_Ethane,
+         NETNGL_Bbl_wo_Ethane = GR_Gas_Prod_Mcf / 1000 * NetRevenueInterest / 100 * NGLYield_Sales_wo_Ethane,
+         NETBOE_Prod_w_Ethane = NETOIL_Bbl + NETGAS_Shrunk_Mcf_w_Ethane / 6 + NETNGL_Bbl_w_Ethane, 
+         NETBOE_Prod_wo_Ethane = NETOIL_Bbl + NETGAS_Shrunk_Mcf_wo_Ethane / 6 + NETNGL_Bbl_wo_Ethane) 
 
 b334 <- JOIN %>% filter(LEASE == "BRISCOE B 333H") %>% 
   #select(LEASE, Prod_Dt, C2_WH, C2_RF)
